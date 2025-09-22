@@ -1,1 +1,3 @@
-# smartthingiot.github.io
+# MyGitHub
+
+Just an enthusiastic ⚓
