@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux Directory Structure</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --panel: #0f1525;
+    --border: #1e2d4a;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --accent3: #7fff7f;
+    --text: #c8d8f0;
+    --dim: #4a6080;
+    --highlight: #1a2a40;
+    --glow: 0 0 12px rgba(0,229,255,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    position: relative;
+    z-index: 10;
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: linear-gradient(180deg, rgba(0,229,255,0.05) 0%, transparent 100%);
+  }
+
+  .terminal-icon {
+    width: 42px; height: 42px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    box-shadow: var(--glow);
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 800;
+    font-size: 1.6rem;
+    letter-spacing: 2px;
+    color: #fff;
+  }
+
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.7rem;
+    color: var(--dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  .layout {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: calc(100vh - 89px);
+  }
+
+  /* Tree panel */
+  .tree-panel {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px 0;
+    background: var(--panel);
+  }
+
+  .tree-panel::-webkit-scrollbar { width: 4px; }
+  .tree-panel::-webkit-scrollbar-track { background: transparent; }
+  .tree-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .tree-node {
+    position: relative;
+  }
+
+  .node-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px 6px 0;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .node-row:hover { background: rgba(0,229,255,0.06); }
+  .node-row.active { background: rgba(0,229,255,0.12); }
+  .node-row.active .node-name { color: var(--accent); }
+
+  .indent { display: inline-block; width: 20px; flex-shrink: 0; }
+  .tree-line {
+    display: inline-block;
+    width: 20px;
+    flex-shrink: 0;
+    position: relative;
+    color: var(--border);
+    font-size: 0.85rem;
+  }
+
+  .toggle-btn {
+    width: 16px; height: 16px;
+    border: 1px solid var(--dim);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    color: var(--dim);
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .toggle-btn.open { border-color: var(--accent); color: var(--accent); }
+
+  .spacer { width: 16px; flex-shrink: 0; }
+
+  .node-icon { font-size: 14px; flex-shrink: 0; }
+
+  .node-name {
+    font-size: 0.85rem;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+
+  .node-name.root-name { color: var(--accent2); font-weight: bold; font-size: 1rem; }
+  .node-name.special { color: var(--accent3); }
+
+  .children {
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+
+  /* Info panel */
+  .info-panel {
+    padding: 32px 40px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .info-panel::-webkit-scrollbar { width: 4px; }
+  .info-panel::-webkit-scrollbar-track { background: transparent; }
+  .info-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .info-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .card-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: linear-gradient(90deg, rgba(0,229,255,0.06) 0%, transparent 100%);
+  }
+
+  .card-icon { font-size: 2rem; }
+
+  .card-path {
+    font-size: 1.3rem;
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  .card-type {
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+
+  .card-body { padding: 24px; }
+
+  .card-desc {
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 300;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: #8fb0d0;
+    margin-bottom: 20px;
+  }
+
+  .facts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .fact-item {
+    background: rgba(0,229,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .fact-label {
+    font-size: 0.6rem;
+    color: var(--dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .fact-value {
+    font-size: 0.82rem;
+    color: var(--accent3);
+  }
+
+  .examples-section { margin-top: 4px; }
+  .examples-title {
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .example-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tag {
+    background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.2);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+
+  /* Command preview */
+  .cmd-box {
+    background: #060c16;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+
+  .cmd-prompt {
+    color: var(--accent3);
+    font-size: 0.8rem;
+    margin-bottom: 6px;
+  }
+
+  .cmd-line {
+    color: #fff;
+    font-size: 0.82rem;
+    line-height: 1.8;
+  }
+
+  .cmd-comment { color: var(--dim); }
+
+  /* Welcome */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    gap: 16px;
+    color: var(--dim);
+    font-family: 'Exo 2', sans-serif;
+  }
+
+  .welcome-icon { font-size: 4rem; opacity: 0.3; }
+  .welcome h2 { font-size: 1.1rem; font-weight: 300; letter-spacing: 4px; text-transform: uppercase; }
+  .welcome p { font-size: 0.8rem; max-width: 300px; line-height: 1.6; }
+
+  /* Pulse animation for root */
+  .root-pulse {
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="terminal-icon">⌥</div>
+  <div>
+    <h1><span>/</span> Linux Directory Structure</h1>
+    <div class="subtitle">Filesystem Hierarchy Standard — Interactive Explorer</div>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="tree-panel" id="tree"></div>
+  <div class="info-panel" id="info">
+    <div class="welcome">
+      <div class="welcome-icon root-pulse">🐧</div>
+      <h2>Select a directory</h2>
+      <p>Click on any directory in the tree to explore its purpose, permissions, and common usage.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const dirs = {
+  name: '/',
+  icon: '💻',
+  type: 'Root Directory',
+  desc: 'The root of the entire Linux filesystem. Every single file and directory on your system starts from here. Think of it as the trunk of a tree — all branches grow from this single point.',
+  perms: 'rwxr-xr-x',
+  owner: 'root:root',
+  facts: { 'Mount Point': '/', 'Inode': '2', 'Clean on reboot': 'No', 'Standard': 'FHS 3.0' },
+  examples: ['/', '/etc', '/home/user'],
+  cmd: `# Navigate to root\ncd /\n\n# List all top-level directories\nls -la /`,
+  children: [
+    {
+      name: 'bin', icon: '⚙️', type: 'Essential User Binaries',
+      desc: 'Contains essential command-line programs (binaries) needed by all users. These are the basic tools available even in single-user mode or when other filesystems are not mounted. In modern distros, /bin is often a symlink to /usr/bin.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Symlink to': '/usr/bin (modern)', 'Essential': 'Yes', 'User access': 'All users', 'Clean on reboot': 'No' },
+      examples: ['ls', 'cp', 'mv', 'bash', 'cat', 'echo', 'grep', 'chmod'],
+      cmd: `# Check if /bin is a symlink\nls -la / | grep bin\n\n# Find all binaries\nls /bin | head -20`
+    },
+    {
+      name: 'boot', icon: '🚀', type: 'Boot Loader Files',
+      desc: 'Contains static files needed to boot the system, including the Linux kernel (vmlinuz), initial RAM disk (initrd/initramfs), and bootloader configuration like GRUB. Do not modify unless you know what you are doing!',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Kernel file': 'vmlinuz-*', 'Bootloader': 'GRUB / LILO', 'Essential': 'Critical', 'Modify risk': '⚠️ High' },
+      examples: ['vmlinuz-5.15.0', 'initrd.img', 'grub/', 'System.map'],
+      cmd: `# List boot files\nls -lh /boot\n\n# Check kernel version\nuname -r\n\n# List GRUB entries\ngrep menuentry /boot/grub/grub.cfg`
+    },
+    {
+      name: 'dev', icon: '🔌', type: 'Device Files',
+      desc: 'Contains special files that represent hardware and virtual devices. In Linux, everything is a file — including your hard drive, USB ports, and terminals. These are not real files on disk but interfaces to kernel drivers.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Type': 'Virtual filesystem', 'Managed by': 'udev / devtmpfs', 'Persistent': 'No (RAM)', 'Key concept': 'Everything is a file' },
+      examples: ['sda', 'sda1', 'tty0', 'null', 'zero', 'random', 'urandom'],
+      cmd: `# List disk devices\nls /dev/sd*\n\n# Write nothing to /dev/null\necho "discard me" > /dev/null\n\n# Generate random data\nhead -c 16 /dev/urandom | xxd`
+    },
+    {
+      name: 'etc', icon: '📋', type: 'Configuration Files',
+      desc: 'The heart of system configuration. Contains host-specific configuration files for the system and installed services. Most configuration that defines how your Linux system behaves lives here — networking, users, services, cron jobs, and more.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Writable by': 'root only', 'User config': '/home/user/', 'Backed up': 'Highly recommended', 'Key files': 'passwd, fstab, hosts' },
+      examples: ['passwd', 'hosts', 'fstab', 'ssh/', 'nginx/', 'crontab', 'sudoers', 'apt/'],
+      cmd: `# View system hostname config\ncat /etc/hostname\n\n# List all users\ncat /etc/passwd\n\n# Check network hosts\ncat /etc/hosts`
+    },
+    {
+      name: 'home', icon: '🏠', type: 'User Home Directories',
+      desc: 'Contains the personal directories for regular users. Each user gets their own subdirectory (e.g. /home/alice) where they store personal files, configurations, and documents. Users have full control over their own home directory.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Per-user path': '/home/username', 'Default perms': '700 or 755', 'Config files': 'Hidden (dotfiles)', 'Backup priority': '🔴 High' },
+      examples: ['.bashrc', '.profile', '.ssh/', 'Documents/', 'Downloads/', '.config/'],
+      cmd: `# Go to your home\ncd ~\n# or\ncd /home/$USER\n\n# Show hidden dotfiles\nls -la ~\n\n# Check disk usage\ndu -sh /home/*`
+    },
+    {
+      name: 'lib', icon: '📚', type: 'Essential Shared Libraries',
+      desc: 'Contains the shared libraries needed by programs in /bin and /sbin. Think of these as DLL files in Windows — reusable code that multiple programs share. Also contains kernel modules.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Symlink to': '/usr/lib (modern)', 'Kernel modules': '/lib/modules/', 'File extension': '.so (shared object)', 'Essential': 'Yes' },
+      examples: ['libc.so.6', 'libm.so', 'modules/', 'firmware/', 'x86_64-linux-gnu/'],
+      cmd: `# Check library dependencies\nldd /bin/ls\n\n# List loaded modules\nlsmod\n\n# Find a library\nldconfig -p | grep libc`
+    },
+    {
+      name: 'media', icon: '💾', type: 'Removable Media',
+      desc: 'Automatically created mount points for removable media like USB drives, DVDs, and SD cards. When you plug in a USB drive, modern Linux systems automatically mount it here under a subdirectory.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Auto-mount': 'Yes (udev/udisks)', 'USB example': '/media/user/USB_NAME', 'Managed by': 'udisks2 / GNOME', 'Docker note': 'Rarely used in containers' },
+      examples: ['username/USB_DRIVE/', 'cdrom/', 'SD_CARD/'],
+      cmd: `# List mounted media\nls /media/\n\n# See all mounts\nlsblk\n\n# Manual mount example\nmount /dev/sdb1 /media/usb`
+    },
+    {
+      name: 'mnt', icon: '📁', type: 'Temporary Mount Points',
+      desc: 'A traditional location for temporarily mounting filesystems manually. Sysadmins use this to mount network drives, external disks, or perform system recovery. Unlike /media, nothing is auto-mounted here.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Auto-mount': 'No', 'Usage': 'Manual / admin', 'Docker note': 'Often used for volume mounts', 'Common use': 'NFS, CIFS, recovery' },
+      examples: ['nfs/', 'backup/', 'windows/', 'rescue/'],
+      cmd: `# Mount a network share\nmount -t nfs 192.168.1.10:/share /mnt/nfs\n\n# Mount a disk image\nmount -o loop disk.img /mnt/img\n\n# Unmount\numount /mnt/nfs`
+    },
+    {
+      name: 'opt', icon: '📦', type: 'Optional/Third-party Software',
+      desc: 'Designated for optional or third-party application software that is not part of the default system. Commercial software, self-installed applications, and software outside the package manager often lives here.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Managed by': 'Manual / vendors', 'Self-contained': 'Yes', 'Examples': 'VSCode, Chrome, Java', 'Docker usage': 'App installations' },
+      examples: ['google/chrome/', 'vscode/', 'java/', 'lampp/', 'homebrew/'],
+      cmd: `# Check installed opt software\nls /opt/\n\n# Install something manually\ncp myapp /opt/myapp\nln -s /opt/myapp/bin/myapp /usr/local/bin/`
+    },
+    {
+      name: 'proc', icon: '🔬', type: 'Process & Kernel Info',
+      desc: 'A virtual pseudo-filesystem that exposes the kernel\'s view of the system. Every running process has a directory here (named by PID). Also contains real-time system info like CPU, memory, and network stats.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Type': 'Virtual (procfs)', 'Persistent': 'No — lives in RAM', 'Created by': 'Linux Kernel', 'Docker note': 'Shared from host kernel' },
+      examples: ['cpuinfo', 'meminfo', 'net/', 'sys/', '1234/ (PID)', 'uptime', 'version'],
+      cmd: `# Check CPU info\ncat /proc/cpuinfo\n\n# Memory info\ncat /proc/meminfo\n\n# List running process dirs\nls /proc | grep '^[0-9]' | head -10`
+    },
+    {
+      name: 'root', icon: '👑', type: 'Root User Home',
+      desc: 'The home directory of the superuser (root). Unlike regular users whose homes are in /home, the root user\'s home is here. It is kept separate from /home so that root can always access it even if /home fails to mount.',
+      perms: 'rwx------', owner: 'root:root',
+      facts: { 'Owner': 'root only', 'Permissions': '700 (very restrictive)', 'Regular users': 'No access', 'Separate from /home': 'By design' },
+      examples: ['.bashrc', '.ssh/', '.profile', 'scripts/', '.bash_history'],
+      cmd: `# Switch to root\nsudo -i\n\n# Navigate to root home\ncd /root\n\n# Check root's history\nsudo cat /root/.bash_history`
+    },
+    {
+      name: 'run', icon: '⚡', type: 'Runtime Data',
+      desc: 'Contains runtime data since last boot: PID files, socket files, and lock files. Replaces older locations like /var/run. Data here is cleared on every reboot. Mounted as tmpfs in modern systems.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Type': 'tmpfs (RAM)', 'Cleared on': 'Every reboot', 'Contains': 'PIDs, sockets, locks', 'Replaces': '/var/run (legacy)' },
+      examples: ['sshd.pid', 'docker.sock', 'lock/', 'user/', 'systemd/'],
+      cmd: `# Find Docker socket\nls -la /run/docker.sock\n\n# View running service PIDs\nls /run/*.pid\n\n# Check tmpfs mounts\ndf -h | grep tmpfs`
+    },
+    {
+      name: 'sbin', icon: '🔧', type: 'System Binaries (Admin)',
+      desc: 'Contains essential system binaries that are typically only run by root or with sudo privileges. These are system administration tools for tasks like disk management, network configuration, and system repair.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Symlink to': '/usr/sbin (modern)', 'Who runs these': 'root / sudo', 'vs /bin': 'Admin tools only', 'Essential': 'Yes (recovery mode)' },
+      examples: ['fdisk', 'fsck', 'ifconfig', 'ip', 'iptables', 'reboot', 'shutdown', 'mkfs'],
+      cmd: `# Check disk partitions (root only)\nsudo fdisk -l\n\n# View network interfaces\nip addr show\n\n# Check filesystem\nsudo fsck /dev/sda1`
+    },
+    {
+      name: 'srv', icon: '🌐', type: 'Service Data',
+      desc: 'Contains data for services provided by the system. For example, web server files, FTP files, or Git repositories. The idea is to keep service data separate from system files for easy backup and management.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Usage': 'Service-specific data', 'Web server': '/srv/http or /srv/www', 'FTP data': '/srv/ftp', 'Often empty': 'Default on many distros' },
+      examples: ['http/', 'ftp/', 'git/', 'nfs/', 'www/'],
+      cmd: `# Set up a web root\nmkdir -p /srv/http/mysite\necho "Hello World" > /srv/http/mysite/index.html\n\n# List service data\nls /srv/`
+    },
+    {
+      name: 'sys', icon: '🖥️', type: 'Kernel & Hardware Info',
+      desc: 'A virtual filesystem (sysfs) that exposes the kernel device tree and hardware information. More structured than /proc, it provides a hierarchical view of devices, drivers, buses, and kernel parameters that can often be changed at runtime.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Type': 'Virtual (sysfs)', 'Introduced': 'Linux 2.6', 'Writable': 'Yes (some files)', 'Docker note': 'Usually read-only in containers' },
+      examples: ['block/', 'bus/', 'class/', 'devices/', 'kernel/', 'module/', 'power/'],
+      cmd: `# Check CPU frequency\ncat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq\n\n# List PCI devices\nls /sys/bus/pci/devices/\n\n# Check battery\ncat /sys/class/power_supply/BAT0/capacity`
+    },
+    {
+      name: 'tmp', icon: '🗑️', type: 'Temporary Files',
+      desc: 'A world-writable directory for temporary files created by applications and users. These files are needed only briefly. Most distributions clean this directory on every reboot, and some mount it as tmpfs (RAM-based).',
+      perms: 'rwxrwxrwx', owner: 'root:root',
+      facts: { 'World-writable': 'Yes (sticky bit)', 'Cleaned on': 'Reboot (usually)', 'Max size': 'Limited (tmpfs)', 'Docker usage': 'App temp files' },
+      examples: ['installer_tmp_*', 'app_cache_*', '.X11-unix/', 'sess_*'],
+      cmd: `# Create a temp file safely\ntmpfile=$(mktemp)\necho "data" > $tmpfile\n\n# Check tmp size\ndf -h /tmp\n\n# Clean manually\nsudo find /tmp -atime +3 -delete`
+    },
+    {
+      name: 'usr', icon: '📂', type: 'User Binaries & Data',
+      desc: 'The second major hierarchy containing the majority of (multi-)user utilities and applications. Contains most user-facing binaries, libraries, documentation, and source code. In modern distros, /bin and /lib are often symlinks into /usr.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Size': 'Largest directory', 'Shareable': 'Yes (across hosts)', 'Read-only': 'Should be (best practice)', 'Contains': 'Most installed software' },
+      examples: ['bin/', 'sbin/', 'lib/', 'lib64/', 'share/', 'local/', 'include/', 'src/'],
+      cmd: `# Find a binary\nwhich python3\n# → /usr/bin/python3\n\n# Check installed package files\ndpkg -L nginx | grep /usr\n\n# Size of /usr\ndu -sh /usr`
+    },
+    {
+      name: 'var', icon: '📊', type: 'Variable Data Files',
+      desc: 'Contains variable data — files whose content is expected to continually change during normal system operation. Includes logs, databases, mail spools, printer spools, and cache files. Unlike /tmp, these files are persistent across reboots.',
+      perms: 'rwxr-xr-x', owner: 'root:root',
+      facts: { 'Persistent': 'Yes (survives reboot)', 'Auto-cleaned': 'No (manual/logrotate)', 'Docker usage': 'Logs, databases', 'Monitor disk': '⚠️ Can grow large' },
+      examples: ['log/', 'lib/', 'cache/', 'mail/', 'spool/', 'tmp/', 'www/'],
+      cmd: `# Check system logs\njournalctl -xe\n# or\ntail -f /var/log/syslog\n\n# Check disk usage\ndu -sh /var/*\n\n# Clean old logs\nsudo journalctl --vacuum-time=7d`
+    }
+  ]
+};
+
+let activeRow = null;
+
+function buildTree(node, depth = 0) {
+  const div = document.createElement('div');
+  div.className = 'tree-node';
+
+  const row = document.createElement('div');
+  row.className = 'node-row';
+
+  // Indentation
+  for (let i = 0; i < depth; i++) {
+    const ind = document.createElement('span');
+    ind.className = 'indent';
+    row.appendChild(ind);
+  }
+
+  const hasChildren = node.children && node.children.length > 0;
+
+  if (hasChildren) {
+    const btn = document.createElement('span');
+    btn.className = 'toggle-btn';
+    btn.textContent = '+';
+    btn.dataset.open = 'false';
+    row.appendChild(btn);
+  } else {
+    const sp = document.createElement('span');
+    sp.className = 'spacer';
+    row.appendChild(sp);
+  }
+
+  const icon = document.createElement('span');
+  icon.className = 'node-icon';
+  icon.textContent = node.icon;
+  row.appendChild(icon);
+
+  const name = document.createElement('span');
+  name.className = 'node-name' + (depth === 0 ? ' root-name' : '');
+  name.textContent = depth === 0 ? '/' : '/' + node.name;
+  row.appendChild(name);
+
+  div.appendChild(row);
+
+  let childrenDiv = null;
+  if (hasChildren) {
+    childrenDiv = document.createElement('div');
+    childrenDiv.className = 'children';
+    childrenDiv.style.maxHeight = depth === 0 ? '2000px' : '0';
+
+    node.children.forEach(child => {
+      childrenDiv.appendChild(buildTree(child, depth + 1));
+    });
+    div.appendChild(childrenDiv);
+
+    const toggleBtn = row.querySelector('.toggle-btn');
+    if (depth === 0) toggleBtn.dataset.open = 'true', toggleBtn.textContent = '−', toggleBtn.classList.add('open');
+
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = toggleBtn.dataset.open === 'true';
+      if (isOpen) {
+        childrenDiv.style.maxHeight = '0';
+        toggleBtn.dataset.open = 'false';
+        toggleBtn.textContent = '+';
+        toggleBtn.classList.remove('open');
+      } else {
+        childrenDiv.style.maxHeight = '2000px';
+        toggleBtn.dataset.open = 'true';
+        toggleBtn.textContent = '−';
+        toggleBtn.classList.add('open');
+      }
+    });
+  }
+
+  row.addEventListener('click', () => {
+    if (activeRow) activeRow.classList.remove('active');
+    row.classList.add('active');
+    activeRow = row;
+    showInfo(node, depth);
+  });
+
+  return div;
+}
+
+function showInfo(node, depth) {
+  const panel = document.getElementById('info');
+  const path = depth === 0 ? '/' : '/' + node.name;
+
+  const factsHtml = Object.entries(node.facts || {}).map(([k,v]) =>
+    `<div class="fact-item"><div class="fact-label">${k}</div><div class="fact-value">${v}</div></div>`
+  ).join('');
+
+  const tagsHtml = (node.examples || []).map(e =>
+    `<span class="tag">${e}</span>`
+  ).join('');
+
+  panel.innerHTML = `
+    <div class="info-card">
+      <div class="card-header">
+        <span class="card-icon">${node.icon}</span>
+        <div>
+          <div class="card-path">${path}</div>
+          <div class="card-type">${node.type}</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-desc">${node.desc}</div>
+        <div class="facts-grid">${factsHtml}</div>
+        ${tagsHtml ? `
+        <div class="examples-section">
+          <div class="examples-title">Common Contents</div>
+          <div class="example-tags">${tagsHtml}</div>
+        </div>` : ''}
+        ${node.cmd ? `
+        <div class="cmd-box">
+          <div class="cmd-prompt">$ useful commands</div>
+          <div class="cmd-line">${node.cmd.replace(/\n/g, '<br>').replace(/#.*/g, m => `<span class="cmd-comment">${m}</span>`)}</div>
+        </div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+// Build the tree
+const treeContainer = document.getElementById('tree');
+treeContainer.appendChild(buildTree(dirs));
+</script>
+</body>
+</html>
