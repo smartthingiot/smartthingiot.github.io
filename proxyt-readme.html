@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProxyT — Tailscale Control Plane Proxy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Variables ─────────────────────────────────────────── */
+:root {
+  --bg:        #0a0c0f;
+  --surface:   #0f1318;
+  --card:      #141920;
+  --border:    #1e2630;
+  --border2:   #263040;
+
+  --green:     #00d97e;
+  --green-dim: #00d97e22;
+  --cyan:      #38bdf8;
+  --cyan-dim:  #38bdf820;
+  --amber:     #fbbf24;
+  --amber-dim: #fbbf2415;
+  --red:       #f87171;
+  --purple:    #a78bfa;
+
+  --text:      #e2e8f0;
+  --text-dim:  #64748b;
+  --text-mid:  #94a3b8;
+
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-head: 'Syne', sans-serif;
+
+  --radius:    8px;
+  --radius-lg: 14px;
+}
+
+/* ── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  min-height: 100vh;
+}
+
+/* ── Noise overlay ─────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: .5;
+}
+
+/* ── Layout ────────────────────────────────────────────── */
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+/* ── Header ────────────────────────────────────────────── */
+header {
+  padding: 60px 0 48px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 48px;
+}
+
+.badge-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid;
+  letter-spacing: .5px;
+}
+
+.badge-green  { color: var(--green);  border-color: var(--green);  background: var(--green-dim); }
+.badge-cyan   { color: var(--cyan);   border-color: var(--cyan);   background: var(--cyan-dim); }
+.badge-amber  { color: var(--amber);  border-color: var(--amber);  background: var(--amber-dim); }
+.badge-purple { color: var(--purple); border-color: var(--purple); background: #a78bfa15; }
+
+.logo-line {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.logo-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, var(--green), var(--cyan));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  box-shadow: 0 0 30px #00d97e30;
+}
+
+h1 {
+  font-family: var(--font-head);
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  background: linear-gradient(135deg, #fff 30%, var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.1;
+}
+
+.tagline {
+  font-size: 15px;
+  color: var(--text-mid);
+  max-width: 600px;
+  margin-bottom: 32px;
+  line-height: 1.6;
+}
+
+/* ── Architecture diagram ──────────────────────────────── */
+.arch {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  margin-bottom: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.arch::before {
+  content: 'ARCHITECTURE';
+  position: absolute;
+  top: 12px; right: 16px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+}
+
+.arch pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-mid);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.arch .g  { color: var(--green); }
+.arch .c  { color: var(--cyan); }
+.arch .a  { color: var(--amber); }
+.arch .d  { color: var(--text-dim); }
+
+/* ── Host tabs ─────────────────────────────────────────── */
+.host-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 32px;
+  width: fit-content;
+}
+
+.host-tab {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  transition: all .2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.host-tab:hover { color: var(--text); background: var(--border); }
+
+.host-tab.active {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid #00d97e40;
+}
+
+.host-panel { display: none; }
+.host-panel.active { display: block; }
+
+/* ── Mode tabs ─────────────────────────────────────────── */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 36px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.mode-tab {
+  padding: 10px 20px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all .2s;
+}
+
+.mode-tab:hover { color: var(--text); }
+
+.mode-tab.active {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
+}
+
+.mode-panel { display: none; }
+.mode-panel.active { display: block; }
+
+/* ── Steps ─────────────────────────────────────────────── */
+.step {
+  margin-bottom: 36px;
+  animation: fadeUp .3s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--green-dim);
+  border: 1px solid #00d97e50;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-title {
+  font-family: var(--font-head);
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -.3px;
+}
+
+.step p {
+  color: var(--text-mid);
+  margin-bottom: 14px;
+  line-height: 1.7;
+}
+
+/* ── Code blocks ───────────────────────────────────────── */
+.code-block {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+.code-label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  padding: 8px 16px 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-label .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--border2);
+}
+
+.code-label.bash .dot { background: var(--green); }
+.code-label.yaml .dot { background: var(--cyan); }
+.code-label.ini  .dot { background: var(--amber); }
+.code-label.json .dot { background: var(--purple); }
+
+pre.code {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.code-block.no-label pre.code {
+  border-radius: var(--radius);
+  border-top: 1px solid var(--border);
+}
+
+/* Syntax highlight classes */
+.kw  { color: var(--cyan); }     /* keywords */
+.cm  { color: var(--text-dim); } /* comments */
+.st  { color: var(--amber); }    /* strings */
+.nm  { color: var(--purple); }   /* numbers / vars */
+.op  { color: var(--green); }    /* operators */
+.hl  { color: var(--green); }    /* highlighted */
+
+/* Copy button */
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--border);
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all .2s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: .3px;
+  z-index: 2;
+}
+
+.code-block:has(.code-label) .copy-btn { top: 36px; }
+
+.copy-btn:hover {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.copy-btn.copied {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* ── Callouts ───────────────────────────────────────────── */
+.callout {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  border-left: 3px solid;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.callout-warn {
+  background: var(--amber-dim);
+  border-color: var(--amber);
+  color: #d4a82a;
+}
+
+.callout-info {
+  background: var(--cyan-dim);
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.callout-danger {
+  background: #f8717115;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.callout-success {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.callout strong { font-weight: 600; }
+
+/* ── Tables ─────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-mid);
+  font-weight: 500;
+  letter-spacing: .3px;
+}
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-mid);
+  vertical-align: top;
+}
+
+td:first-child { color: var(--text); font-weight: 500; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface); }
+
+code {
+  background: var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--cyan);
+}
+
+/* ── Section headings ───────────────────────────────────── */
+.section-title {
+  font-family: var(--font-head);
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin: 48px 0 20px;
+  letter-spacing: -.4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border), transparent);
+}
+
+/* ── Chicken-egg warning ────────────────────────────────── */
+.chicken-egg {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 32px;
+}
+
+.chicken-egg pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-mid);
+  margin-top: 12px;
+  line-height: 1.7;
+}
+
+/* ── Quick ref ──────────────────────────────────────────── */
+.quick-ref {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 48px;
+}
+
+.quick-ref-header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--green);
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+/* ── Installer CTA ──────────────────────────────────────── */
+.installer-cta {
+  background: linear-gradient(135deg, #0f1318 0%, #0a1a10 100%);
+  border: 1px solid #00d97e30;
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-bottom: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.installer-cta::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, #00d97e15, transparent 70%);
+  border-radius: 50%;
+}
+
+.installer-cta h2 {
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.installer-cta p {
+  color: var(--text-mid);
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── Divider ────────────────────────────────────────────── */
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 40px 0;
+}
+
+/* ── Footer ─────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 24px 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+footer a { color: var(--cyan); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+/* ── Verification steps ─────────────────────────────────── */
+.verify-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.verify-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+
+.verify-num {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  background: var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.verify-item code {
+  background: none;
+  color: var(--green);
+  padding: 0;
+  font-size: 13px;
+}
+
+/* ── TOC ────────────────────────────────────────────────── */
+.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  margin-bottom: 48px;
+  font-size: 13px;
+}
+
+.toc-title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.toc a {
+  display: block;
+  color: var(--text-mid);
+  text-decoration: none;
+  padding: 3px 0;
+  transition: color .15s;
+}
+
+.toc a:hover { color: var(--cyan); }
+.toc a::before { content: '→ '; color: var(--border2); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="badge-row">
+    <span class="badge badge-green">v0.0.5</span>
+    <span class="badge badge-cyan">MIT License</span>
+    <span class="badge badge-amber">Raspberry Pi 5</span>
+    <span class="badge badge-amber">Oracle Cloud VPS</span>
+    <span class="badge badge-purple">arm64</span>
+  </div>
+
+  <div class="logo-line">
+    <div class="logo-icon">⇆</div>
+    <h1>ProxyT</h1>
+  </div>
+
+  <p class="tagline">
+    A lightweight proxy for the Tailscale control plane. Host it on your Pi or VPS,
+    expose it via Tailscale Funnel or your own domain, and authenticate Tailscale clients
+    even when <code>login.tailscale.com</code> is blocked or unreachable.
+  </p>
+
+  <div class="badge-row">
+    <a class="badge badge-cyan" href="https://github.com/jaxxstorm/proxyt" style="text-decoration:none">GitHub ↗</a>
+    <a class="badge badge-green" href="https://proxyt.io" style="text-decoration:none">Docs ↗</a>
+  </div>
+</header>
+
+<!-- ══ ARCHITECTURE ════════════════════════════════════════════════════════ -->
+<div class="arch">
+  <pre><span class="d">Device on a network blocking tailscale.com</span>
+        │
+        │  <span class="c">HTTPS (public internet)</span>
+        ▼
+<span class="g">https://your-node.ibis-velociraptor.ts.net</span>   <span class="d">← Tailscale Funnel (TLS)</span>
+        │                <span class="a">— OR —</span>
+<span class="g">https://proxyt.yourdomain.com</span>               <span class="d">← Custom domain (Let's Encrypt)</span>
+        │
+        │  <span class="c">HTTP (localhost only)</span>
+        ▼
+<span class="a">ProxyT  :8080  --http-only</span>                    <span class="d">← proxyt serve</span>
+        │
+        │  <span class="c">HTTPS</span>
+        ▼
+<span class="g">login.tailscale.com</span>                          <span class="d">← Tailscale control plane</span></pre>
+</div>
+
+<!-- ══ TOC ═════════════════════════════════════════════════════════════════ -->
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <a href="#prerequisites">Prerequisites</a>
+  <a href="#installer">One-line Installer Script</a>
+  <a href="#manual">Manual Setup</a>
+  <a href="#funnel">Mode A — Tailscale Funnel</a>
+  <a href="#custom-domain">Mode B — Custom Domain</a>
+  <a href="#clients">Configuring Tailscale Clients</a>
+  <a href="#verification">Verification</a>
+  <a href="#security">Security Notes</a>
+  <a href="#reference">Quick Reference</a>
+</div>
+
+<!-- ══ INSTALLER CTA ═══════════════════════════════════════════════════════ -->
+<div class="installer-cta" id="installer">
+  <h2>⚡ One-line Installer</h2>
+  <p>Interactive script — detects arch, installs binary, writes config, creates systemd service.<br>
+     Supports Funnel mode, custom domain (Let's Encrypt), and HTTP-only behind proxy.</p>
+
+  <div class="code-block no-label">
+    <button class="copy-btn" onclick="copyCode(this)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      copy
+    </button>
+    <pre class="code"><span class="cm"># Download and run the installer</span>
+<span class="kw">curl</span> -sL https://raw.githubusercontent.com/YOUR_FORK/proxyt-install/main/install-proxyt.sh \
+  | <span class="kw">sudo</span> bash</pre>
+  </div>
+
+  <p style="margin:0; font-size:12px; color:var(--text-dim)">
+    Or download and inspect before running: <code>curl -sLO .../install-proxyt.sh && less install-proxyt.sh && sudo bash install-proxyt.sh</code>
+  </p>
+</div>
+
+<!-- ══ PREREQUISITES ════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="prerequisites">Prerequisites</h2>
+
+<table>
+  <thead><tr><th>Item</th><th>Pi 5 (tailnet-pi77)</th><th>Oracle VPS (ubuntuserver-50)</th></tr></thead>
+  <tbody>
+    <tr><td>OS</td><td>Raspberry Pi OS 64-bit</td><td>Ubuntu 22.04 (aarch64)</td></tr>
+    <tr><td>Architecture</td><td><code>arm64</code></td><td><code>arm64</code></td></tr>
+    <tr><td>Tailscale</td><td>Installed + authenticated</td><td>Installed + authenticated</td></tr>
+    <tr><td>HTTPS Certs</td><td colspan="2">Enabled in Tailscale admin → DNS → HTTPS Certificates</td></tr>
+    <tr><td>Funnel nodeAttr</td><td colspan="2">Added in ACL policy (see Step 2)</td></tr>
+    <tr><td>Own auth</td><td colspan="2">This node authenticates <strong>directly</strong> — no <code>--login-server</code></td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-warn">
+  <strong>⚠ Enable HTTPS Certificates first.</strong>
+  In the <a href="https://login.tailscale.com/admin/dns" style="color:inherit">Tailscale admin console</a> → DNS tab → HTTPS Certificates → Enable.
+  Funnel will not work without this.
+</div>
+
+<!-- ══ HOST TABS ════════════════════════════════════════════════════════════ -->
+<div class="host-tabs">
+  <button class="host-tab active" onclick="switchHost('pi')">
+    🍓 Raspberry Pi 5
+  </button>
+  <button class="host-tab" onclick="switchHost('vps')">
+    ☁️ Oracle Cloud VPS
+  </button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- PI PANEL -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="host-panel active" id="panel-pi">
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="switchMode('pi','funnel')">Mode A — Tailscale Funnel</button>
+    <button class="mode-tab" onclick="switchMode('pi','custom')">Mode B — Custom Domain</button>
+  </div>
+
+  <!-- ── PI / FUNNEL ────────────────────────────────────────────────────── -->
+  <div class="mode-panel active" id="pi-funnel">
+
+    <h2 class="section-title" id="funnel">Step 1 — Grant Funnel in ACL Policy</h2>
+
+    <p style="color:var(--text-mid); margin-bottom:16px">
+      In your Tailscale admin <strong>Access Controls</strong>, add the <code>funnel</code>
+      nodeAttr. Since <code>tailnet-pi77</code> carries <code>tag:subnet-router</code>,
+      add it to that tag — or target the node directly.
+    </p>
+
+    <div class="code-block">
+      <div class="code-label json"><span class="dot"></span>ACL Policy — via existing tag (recommended)</div>
+      <button class="copy-btn" onclick="copyCode(this)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+      </button>
+      <pre class="code"><span class="st">"nodeAttrs"</span>: [
+  {
+    <span class="st">"target"</span>: [<span class="st">"tag:subnet-router"</span>],
+    <span class="st">"attr"</span>:   [<span class="st">"funnel"</span>]
+  }
+]</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label json"><span class="dot"></span>ACL Policy — target node directly</div>
+      <button class="copy-btn" onclick="copyCode(this)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+      </button>
+      <pre class="code"><span class="st">"nodeAttrs"</span>: [
+  {
+    <span class="st">"target"</span>: [<span class="st">"tailnet-pi77"</span>],
+    <span class="st">"attr"</span>:   [<span class="st">"funnel"</span>]
+  }
+]</pre>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div class="step-title">Install ProxyT Binary</div>
+      </div>
+      <p>Pi 5 is <code>aarch64</code> — use the <code>arm64</code> build.</p>
+
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — tailnet-pi77</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="nm">VERSION</span>=<span class="st">"v0.0.5"</span>
+<span class="kw">curl</span> -sLO <span class="st">"https://github.com/jaxxstorm/proxyt/releases/download/${VERSION}/proxyt_linux_arm64.tar.gz"</span>
+<span class="kw">tar</span> -xzf proxyt_linux_arm64.tar.gz
+<span class="kw">sudo</span> install -m 0755 proxyt /usr/local/bin/proxyt
+<span class="kw">rm</span> proxyt_linux_arm64.tar.gz proxyt
+<span class="cm"># Verify</span>
+proxyt --version
+proxyt serve --help</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-title">Create Config File</div>
+      </div>
+      <p>
+        <code>bind: 127.0.0.1</code> locks ProxyT to loopback — only Funnel
+        can reach it. Nothing on your LAN (<code>172.16.10.0/24</code>) can
+        touch port 8080 directly.
+      </p>
+
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/proxyt.yaml &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+domain: tailnet-pi77.ibis-velociraptor.ts.net
+http-only: true
+port: 8080
+bind: 127.0.0.1
+debug: false
+<span class="op">EOF</span>
+<span class="kw">sudo</span> chmod 644 /etc/proxyt.yaml</pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label yaml"><span class="dot"></span>/etc/proxyt.yaml</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="cm"># ProxyT — Funnel mode (HTTP-only, TLS handled by Funnel)</span>
+<span class="kw">domain</span>:    tailnet-pi77.ibis-velociraptor.ts.net
+<span class="kw">http-only</span>: <span class="nm">true</span>
+<span class="kw">port</span>:      <span class="nm">8080</span>
+<span class="kw">bind</span>:      127.0.0.1
+<span class="kw">debug</span>:     <span class="nm">false</span></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">4</div>
+        <div class="step-title">Create systemd Service</div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/systemd/system/proxyt.service &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+[Unit]
+Description=ProxyT - Tailscale control plane proxy
+Documentation=https://proxyt.io
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/proxyt serve --config /etc/proxyt.yaml
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+User=nobody
+Group=nogroup
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
+<span class="op">EOF</span>
+
+<span class="kw">sudo</span> systemctl daemon-reload
+<span class="kw">sudo</span> systemctl enable --now proxyt
+<span class="kw">sudo</span> systemctl status proxyt</pre>
+      </div>
+
+      <p>Confirm it's on loopback only:</p>
+      <div class="code-block no-label">
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">ss</span> -tlnp | grep 8080
+<span class="cm"># Expected: 127.0.0.1:8080   ← NOT 0.0.0.0:8080</span>
+<span class="kw">curl</span> -s http://localhost:8080
+<span class="cm"># Any HTTP response confirms proxyt is alive</span></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">5</div>
+        <div class="step-title">Enable Tailscale Funnel</div>
+      </div>
+
+      <div class="code-block no-label">
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="cm"># Expose port 8080 publicly, persist in tailscaled state</span>
+<span class="kw">sudo</span> tailscale funnel --bg 8080
+
+<span class="cm"># Verify</span>
+tailscale funnel status</pre>
+      </div>
+
+      <p>Expected output:</p>
+      <div class="code-block no-label">
+        <pre class="code"><span class="g">https://tailnet-pi77.ibis-velociraptor.ts.net</span> (Funnel on)
+|-- / proxy http://127.0.0.1:8080</pre>
+      </div>
+
+      <p>Test from outside your tailnet (phone on mobile data):</p>
+      <div class="code-block no-label">
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">curl</span> -I https://tailnet-pi77.ibis-velociraptor.ts.net</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">6</div>
+        <div class="step-title">Persist Funnel Across Reboots</div>
+      </div>
+      <p>
+        <code>--bg</code> saves state inside <code>tailscaled</code>. Reboot and run
+        <code>tailscale funnel status</code> to confirm. If it doesn't persist, add this unit:
+      </p>
+
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — optional persistence unit</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/systemd/system/tailscale-funnel-proxyt.service &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+[Unit]
+Description=Tailscale Funnel for ProxyT port 8080
+After=tailscaled.service proxyt.service
+Requires=proxyt.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tailscale funnel --bg 8080
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+<span class="op">EOF</span>
+
+<span class="kw">sudo</span> systemctl daemon-reload
+<span class="kw">sudo</span> systemctl enable tailscale-funnel-proxyt</pre>
+      </div>
+    </div>
+
+  </div><!-- end pi-funnel -->
+
+  <!-- ── PI / CUSTOM DOMAIN ─────────────────────────────────────────────── -->
+  <div class="mode-panel" id="pi-custom" style="display:none">
+
+    <div class="callout callout-info">
+      <strong>Custom domain mode:</strong> ProxyT handles TLS itself via Let's Encrypt.
+      No Funnel needed. Your domain's A record must point to this server's public IP.
+      Port 80 and 443 must be open.
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div class="step-title">Install ProxyT Binary</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="nm">VERSION</span>=<span class="st">"v0.0.5"</span>
+<span class="kw">curl</span> -sLO <span class="st">"https://github.com/jaxxstorm/proxyt/releases/download/${VERSION}/proxyt_linux_arm64.tar.gz"</span>
+<span class="kw">tar</span> -xzf proxyt_linux_arm64.tar.gz
+<span class="kw">sudo</span> install -m 0755 proxyt /usr/local/bin/proxyt
+<span class="kw">rm</span> proxyt_linux_arm64.tar.gz proxyt</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div class="step-title">Create DNS A Record</div>
+      </div>
+      <p>Point your domain to this server's public IP before starting ProxyT.</p>
+      <table>
+        <tr><th>Field</th><th>Value</th></tr>
+        <tr><td>Type</td><td><code>A</code></td></tr>
+        <tr><td>Name</td><td><code>proxyt.yourdomain.com</code></td></tr>
+        <tr><td>Value</td><td>Your server's public IP</td></tr>
+        <tr><td>TTL</td><td><code>300</code></td></tr>
+      </table>
+      <div class="callout callout-warn">
+        <strong>Cloudflare users:</strong> Set DNS proxy to <strong>DNS only (grey cloud)</strong>.
+        Orange cloud (proxy) will intercept the Let's Encrypt HTTP-01 challenge and break cert issuance.
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-title">Open Ports 80 and 443</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — ufw</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> ufw allow 80/tcp
+<span class="kw">sudo</span> ufw allow 443/tcp
+<span class="kw">sudo</span> ufw status</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">4</div>
+        <div class="step-title">Create Config File</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label yaml"><span class="dot"></span>/etc/proxyt.yaml — custom domain with Let's Encrypt</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="cm"># ProxyT — Custom domain mode (Let's Encrypt TLS)</span>
+<span class="kw">domain</span>:     proxyt.yourdomain.com
+<span class="kw">email</span>:      you@yourdomain.com
+<span class="kw">issue</span>:      <span class="nm">true</span>
+<span class="kw">https-port</span>: <span class="nm">443</span>
+<span class="kw">port</span>:       <span class="nm">80</span>
+<span class="kw">debug</span>:      <span class="nm">false</span></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">5</div>
+        <div class="step-title">Create systemd Service</div>
+      </div>
+      <div class="callout callout-warn">
+        Custom domain mode runs as <strong>root</strong> — it needs ports 80/443 and write access
+        to cert storage. This is unavoidable without a separate ACME client.
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/systemd/system/proxyt.service &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+[Unit]
+Description=ProxyT - Tailscale control plane proxy
+Documentation=https://proxyt.io
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/proxyt serve --config /etc/proxyt.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+<span class="op">EOF</span>
+
+<span class="kw">sudo</span> systemctl daemon-reload
+<span class="kw">sudo</span> systemctl enable --now proxyt
+<span class="kw">sudo</span> systemctl status proxyt</pre>
+      </div>
+      <p>Watch logs during first start to see cert issuance:</p>
+      <div class="code-block no-label">
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">journalctl</span> -fu proxyt</pre>
+      </div>
+    </div>
+
+    <div class="callout callout-success" style="margin-top:8px">
+      Once running, your <strong>login server URL</strong> is <code>https://proxyt.yourdomain.com</code>.
+      Use this in <code>tailscale up --login-server</code> on all client nodes.
+    </div>
+
+  </div><!-- end pi-custom -->
+
+</div><!-- end panel-pi -->
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- VPS PANEL -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="host-panel" id="panel-vps" style="display:none">
+
+  <div class="callout callout-info">
+    <strong>Oracle Cloud VPS</strong> is the better primary host — always-on, public IP already reachable.
+    Architecture is also <code>arm64</code> (aarch64). Oracle's firewall requires two layers: OCI Security List + OS iptables.
+  </div>
+
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="switchMode('vps','funnel')">Mode A — Tailscale Funnel</button>
+    <button class="mode-tab" onclick="switchMode('vps','custom')">Mode B — Custom Domain</button>
+  </div>
+
+  <!-- ── VPS / FUNNEL ───────────────────────────────────────────────────── -->
+  <div class="mode-panel active" id="vps-funnel">
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div class="step-title">Grant Funnel in ACL Policy</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label json"><span class="dot"></span>ACL Policy — target ubuntuserver-50</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="st">"nodeAttrs"</span>: [
+  {
+    <span class="st">"target"</span>: [<span class="st">"tag:subnet-router"</span>],
+    <span class="st">"attr"</span>:   [<span class="st">"funnel"</span>]
+  },
+  {
+    <span class="st">"target"</span>: [<span class="st">"ubuntuserver-50"</span>],
+    <span class="st">"attr"</span>:   [<span class="st">"funnel"</span>]
+  }
+]</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div class="step-title">Open Oracle Cloud Firewall</div>
+      </div>
+      <p>Oracle requires two separate layers — the OCI console and the OS.</p>
+
+      <p><strong>OCI Console:</strong> Networking → VCN → Security Lists → Default → Ingress Rules → Add:</p>
+      <table>
+        <tr><th>Field</th><th>Value</th></tr>
+        <tr><td>Source CIDR</td><td><code>0.0.0.0/0</code></td></tr>
+        <tr><td>Protocol</td><td>TCP</td></tr>
+        <tr><td>Destination Port</td><td><code>443</code></td></tr>
+      </table>
+
+      <p><strong>OS iptables:</strong></p>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — ubuntuserver-50</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+<span class="kw">sudo</span> iptables -I INPUT -p tcp --dport 80  -j ACCEPT
+<span class="cm"># Persist across reboots</span>
+<span class="kw">sudo</span> apt install iptables-persistent -y
+<span class="kw">sudo</span> netfilter-persistent save</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-title">Install ProxyT Binary</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — ubuntuserver-50</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="nm">VERSION</span>=<span class="st">"v0.0.5"</span>
+<span class="kw">curl</span> -sLO <span class="st">"https://github.com/jaxxstorm/proxyt/releases/download/${VERSION}/proxyt_linux_arm64.tar.gz"</span>
+<span class="kw">tar</span> -xzf proxyt_linux_arm64.tar.gz
+<span class="kw">sudo</span> install -m 0755 proxyt /usr/local/bin/proxyt
+<span class="kw">rm</span> proxyt_linux_arm64.tar.gz proxyt
+proxyt --version</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">4</div>
+        <div class="step-title">Create Config File</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/proxyt.yaml &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+domain: ubuntuserver-50.ibis-velociraptor.ts.net
+http-only: true
+port: 8080
+bind: 127.0.0.1
+debug: false
+<span class="op">EOF</span>
+<span class="kw">sudo</span> chmod 644 /etc/proxyt.yaml</pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">5</div>
+        <div class="step-title">Create systemd Service + Enable Funnel</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> tee /etc/systemd/system/proxyt.service &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+[Unit]
+Description=ProxyT - Tailscale control plane proxy
+Documentation=https://proxyt.io
+After=network.target tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/proxyt serve --config /etc/proxyt.yaml
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+User=nobody
+Group=nogroup
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictNamespaces=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
+<span class="op">EOF</span>
+
+<span class="kw">sudo</span> systemctl daemon-reload
+<span class="kw">sudo</span> systemctl enable --now proxyt
+<span class="cm"># Verify listening</span>
+<span class="kw">ss</span> -tlnp | grep 8080
+<span class="cm"># Enable Funnel</span>
+<span class="kw">sudo</span> tailscale funnel --bg 8080
+tailscale funnel status</pre>
+      </div>
+    </div>
+
+  </div><!-- end vps-funnel -->
+
+  <!-- ── VPS / CUSTOM DOMAIN ────────────────────────────────────────────── -->
+  <div class="mode-panel" id="vps-custom" style="display:none">
+
+    <div class="callout callout-success">
+      <strong>Best combo:</strong> Oracle VPS + custom domain. VPS has a stable public IP,
+      always-on, and no dependency on Tailscale's ts.net infrastructure.
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div class="step-title">Open Oracle Firewall (Both Layers)</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash — OS iptables</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> iptables -I INPUT -p tcp --dport 80  -j ACCEPT
+<span class="kw">sudo</span> iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+<span class="kw">sudo</span> apt install iptables-persistent -y
+<span class="kw">sudo</span> netfilter-persistent save</pre>
+      </div>
+      <p>Also add ports 80 and 443 in OCI Console → Security Lists → Ingress Rules.</p>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div class="step-title">Install Binary + Create DNS A Record</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="nm">VERSION</span>=<span class="st">"v0.0.5"</span>
+<span class="kw">curl</span> -sLO <span class="st">"https://github.com/jaxxstorm/proxyt/releases/download/${VERSION}/proxyt_linux_arm64.tar.gz"</span>
+<span class="kw">tar</span> -xzf proxyt_linux_arm64.tar.gz
+<span class="kw">sudo</span> install -m 0755 proxyt /usr/local/bin/proxyt
+<span class="kw">rm</span> proxyt_linux_arm64.tar.gz proxyt
+<span class="cm"># Find your public IP for the DNS A record</span>
+<span class="kw">curl</span> -s4 ifconfig.me</pre>
+      </div>
+
+      <table>
+        <tr><th>DNS Record Field</th><th>Value</th></tr>
+        <tr><td>Type</td><td><code>A</code></td></tr>
+        <tr><td>Name</td><td><code>proxyt.yourdomain.com</code></td></tr>
+        <tr><td>Value</td><td>Output of <code>curl -s4 ifconfig.me</code></td></tr>
+        <tr><td>TTL</td><td><code>300</code></td></tr>
+      </table>
+    </div>
+
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div class="step-title">Create Config + Service</div>
+      </div>
+      <div class="code-block">
+        <div class="code-label yaml"><span class="dot"></span>/etc/proxyt.yaml</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="cm"># ProxyT — Custom domain with Let's Encrypt</span>
+<span class="kw">domain</span>:     proxyt.yourdomain.com
+<span class="kw">email</span>:      you@yourdomain.com
+<span class="kw">issue</span>:      <span class="nm">true</span>
+<span class="kw">https-port</span>: <span class="nm">443</span>
+<span class="kw">port</span>:       <span class="nm">80</span>
+<span class="kw">debug</span>:      <span class="nm">false</span></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-label bash"><span class="dot"></span>bash</div>
+        <button class="copy-btn" onclick="copyCode(this)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+        </button>
+        <pre class="code"><span class="kw">sudo</span> chmod 644 /etc/proxyt.yaml
+<span class="kw">sudo</span> tee /etc/systemd/system/proxyt.service &gt; /dev/null <span class="op">&lt;&lt;'EOF'</span>
+[Unit]
+Description=ProxyT - Tailscale control plane proxy
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/proxyt serve --config /etc/proxyt.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+<span class="op">EOF</span>
+
+<span class="kw">sudo</span> systemctl daemon-reload
+<span class="kw">sudo</span> systemctl enable --now proxyt
+<span class="cm"># Watch cert issuance on first start</span>
+<span class="kw">journalctl</span> -fu proxyt</pre>
+      </div>
+    </div>
+
+  </div><!-- end vps-custom -->
+
+</div><!-- end panel-vps -->
+
+<!-- ══ CLIENTS ══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="clients">Configuring Tailscale Clients</h2>
+
+<p style="color:var(--text-mid); margin-bottom:20px">
+  Run on every other tailnet node that should authenticate via ProxyT.
+  Replace the URL with your actual Funnel hostname or custom domain.
+</p>
+
+<div class="code-block">
+  <div class="code-label bash"><span class="dot"></span>bash — basic node</div>
+  <button class="copy-btn" onclick="copyCode(this)">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+  </button>
+  <pre class="code"><span class="kw">sudo</span> tailscale logout
+<span class="kw">sudo</span> tailscale up --login-server https://YOUR-PROXYT-URL</pre>
+</div>
+
+<div class="code-block">
+  <div class="code-label bash"><span class="dot"></span>bash — Pi subnet router</div>
+  <button class="copy-btn" onclick="copyCode(this)">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+  </button>
+  <pre class="code"><span class="kw">sudo</span> tailscale logout
+<span class="kw">sudo</span> tailscale up \
+  --login-server https://YOUR-PROXYT-URL \
+  --advertise-routes=172.16.10.0/24 \
+  --accept-routes \
+  --advertise-exit-node</pre>
+</div>
+
+<div class="code-block">
+  <div class="code-label bash"><span class="dot"></span>bash — Oracle VPS exit node</div>
+  <button class="copy-btn" onclick="copyCode(this)">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+  </button>
+  <pre class="code"><span class="kw">sudo</span> tailscale logout
+<span class="kw">sudo</span> tailscale up \
+  --login-server https://YOUR-PROXYT-URL \
+  --advertise-exit-node</pre>
+</div>
+
+<!-- Chicken-egg -->
+<div class="chicken-egg">
+  <strong style="color:var(--red)">⚠ The Chicken-and-Egg Rule</strong>
+  <p style="color:var(--text-mid); margin-top:8px; font-size:13px">
+    The host running ProxyT must authenticate <em>directly</em> to Tailscale — never through its own ProxyT.
+    If it used <code>--login-server</code> pointing to itself and lost auth, Funnel goes down
+    and no client can re-authenticate.
+  </p>
+  <pre>
+<span style="color:var(--green)">tailnet-pi77</span>  ──── direct ────►  login.tailscale.com
+     │
+     └── Funnel ──► ProxyT ──► login.tailscale.com  <span style="color:var(--text-dim)">(for all other nodes)</span>
+
+<span style="color:var(--red)">✗ NEVER:</span>  tailnet-pi77  →  --login-server https://tailnet-pi77.ibis-velociraptor.ts.net</pre>
+</div>
+
+<!-- ══ VERIFICATION ══════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="verification">Verification Checklist</h2>
+
+<div class="verify-grid">
+  <div class="verify-item">
+    <div class="verify-num">1</div>
+    <div>
+      <strong>ProxyT running</strong><br>
+      <code>sudo systemctl status proxyt</code>
+    </div>
+  </div>
+  <div class="verify-item">
+    <div class="verify-num">2</div>
+    <div>
+      <strong>Loopback binding</strong><br>
+      <code>ss -tlnp | grep 8080</code> → must show <code>127.0.0.1:8080</code>
+    </div>
+  </div>
+  <div class="verify-item">
+    <div class="verify-num">3</div>
+    <div>
+      <strong>Local HTTP response</strong><br>
+      <code>curl -so /dev/null -w "%{http_code}" http://localhost:8080</code> → any non-000
+    </div>
+  </div>
+  <div class="verify-item">
+    <div class="verify-num">4</div>
+    <div>
+      <strong>Funnel active</strong><br>
+      <code>tailscale funnel status</code> → shows Funnel on
+    </div>
+  </div>
+  <div class="verify-item">
+    <div class="verify-num">5</div>
+    <div>
+      <strong>Public HTTPS reachable</strong> (from outside tailnet)<br>
+      <code>curl -I https://YOUR-PROXYT-URL</code> → HTTP response
+    </div>
+  </div>
+  <div class="verify-item">
+    <div class="verify-num">6</div>
+    <div>
+      <strong>Client auth works</strong><br>
+      <code>sudo tailscale up --login-server https://YOUR-PROXYT-URL</code>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOGS ══════════════════════════════════════════════════════════════════ -->
+<h2 class="section-title">Logs &amp; Debugging</h2>
+
+<div class="code-block">
+  <div class="code-label bash"><span class="dot"></span>bash</div>
+  <button class="copy-btn" onclick="copyCode(this)">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>copy
+  </button>
+  <pre class="code"><span class="cm"># Live logs</span>
+<span class="kw">journalctl</span> -fu proxyt
+
+<span class="cm"># Last 100 lines</span>
+<span class="kw">journalctl</span> -u proxyt -n 100 --no-pager
+
+<span class="cm"># Enable debug logging (edit config then restart)</span>
+<span class="kw">sudo</span> sed -i <span class="st">'s/debug: false/debug: true/'</span> /etc/proxyt.yaml
+<span class="kw">sudo</span> systemctl restart proxyt
+<span class="kw">journalctl</span> -fu proxyt
+
+<span class="cm"># Funnel events</span>
+<span class="kw">journalctl</span> -fu tailscaled | grep -i funnel</pre>
+</div>
+
+<!-- ══ SECURITY ══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="security">Security Notes</h2>
+
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Port 8080 exposed on LAN</td>
+      <td><code>bind: 127.0.0.1</code> in config — loopback only</td>
+    </tr>
+    <tr>
+      <td>ProxyT running with excess privileges</td>
+      <td><code>User=nobody</code> + full systemd hardening in Funnel mode</td>
+    </tr>
+    <tr>
+      <td>This node using its own ProxyT for auth</td>
+      <td>Never set <code>--login-server</code> on the ProxyT host itself</td>
+    </tr>
+    <tr>
+      <td>Funnel down after reboot</td>
+      <td>Funnel state persisted in <code>tailscaled</code>; backup systemd unit available</td>
+    </tr>
+    <tr>
+      <td>ProxyT accessible from LAN in http-proxy mode</td>
+      <td>Change <code>bind: 0.0.0.0</code> back to <code>127.0.0.1</code> if Cloudflare Tunnel is local</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ══ QUICK REFERENCE ══════════════════════════════════════════════════════ -->
+<div class="quick-ref" id="reference">
+  <div class="quick-ref-header">⚡ Quick Reference</div>
+  <table style="margin:0">
+    <tr><td>Binary</td><td><code>/usr/local/bin/proxyt</code></td></tr>
+    <tr><td>Config</td><td><code>/etc/proxyt.yaml</code></td></tr>
+    <tr><td>Listen (Funnel mode)</td><td><code>127.0.0.1:8080</code></td></tr>
+    <tr><td>systemd unit</td><td><code>proxyt.service</code></td></tr>
+    <tr><td>Funnel URL (Pi)</td><td><code>https://tailnet-pi77.ibis-velociraptor.ts.net</code></td></tr>
+    <tr><td>Funnel URL (VPS)</td><td><code>https://ubuntuserver-50.ibis-velociraptor.ts.net</code></td></tr>
+    <tr><td>Client flag</td><td><code>--login-server https://YOUR-PROXYT-URL</code></td></tr>
+    <tr><td>Host's own auth</td><td>Direct — never use <code>--login-server</code> on the ProxyT host</td></tr>
+    <tr><td>ProxyT version</td><td><code>v0.0.5</code></td></tr>
+    <tr><td>Architecture (both)</td><td><code>arm64</code></td></tr>
+    <tr><td>View logs</td><td><code>journalctl -fu proxyt</code></td></tr>
+    <tr><td>Restart service</td><td><code>sudo systemctl restart proxyt</code></td></tr>
+  </table>
+</div>
+
+<!-- ══ FOOTER ════════════════════════════════════════════════════════════════ -->
+<footer>
+  <p>
+    <a href="https://github.com/jaxxstorm/proxyt">jaxxstorm/proxyt</a> ·
+    <a href="https://proxyt.io">proxyt.io</a> ·
+    MIT License
+  </p>
+</footer>
+
+</div><!-- end .page -->
+
+<script>
+function switchHost(host) {
+  document.querySelectorAll('.host-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.host-panel').forEach(p => { p.style.display='none'; p.classList.remove('active'); });
+  event.currentTarget.classList.add('active');
+  const panel = document.getElementById('panel-' + host);
+  panel.style.display = 'block';
+  panel.classList.add('active');
+}
+
+function switchMode(host, mode) {
+  const panel = document.getElementById('panel-' + host);
+  panel.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  panel.querySelectorAll('.mode-panel').forEach(p => { p.style.display='none'; p.classList.remove('active'); });
+  event.currentTarget.classList.add('active');
+  const mp = document.getElementById(host + '-' + mode);
+  mp.style.display = 'block';
+  mp.classList.add('active');
+}
+
+function copyCode(btn) {
+  const block = btn.closest('.code-block');
+  const pre = block.querySelector('pre.code');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> copied!`;
+    btn.classList.add('copied');
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Stagger step animations on mode switch
+document.querySelectorAll('.mode-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    setTimeout(() => {
+      document.querySelectorAll('.host-panel.active .mode-panel.active .step').forEach((s, i) => {
+        s.style.animationDelay = (i * 60) + 'ms';
+      });
+    }, 10);
+  });
+});
+</script>
+</body>
+</html>
