@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network & Power Diagram — Home Lab</title>
+<style>
+  :root {
+    --surface-0: #f1efe8; --surface-1: #f8f7f4; --surface-2: #ffffff;
+    --border: rgba(0,0,0,.12); --border-strong: rgba(0,0,0,.2); --border-stronger: rgba(0,0,0,.35);
+    --text-primary: #1a1a18; --text-secondary: #5f5e5a; --text-muted: #888780;
+    --bg-accent: #e6f1fb; --border-accent: #85b7eb; --text-accent: #185fa5;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-0: #1a1a18; --surface-1: #242422; --surface-2: #2e2e2c;
+      --border: rgba(255,255,255,.1); --border-strong: rgba(255,255,255,.18); --border-stronger: rgba(255,255,255,.3);
+      --text-primary: #e8e6de; --text-secondary: #9c9a92; --text-muted: #666460;
+      --bg-accent: #0c1e30; --border-accent: #185fa5; --text-accent: #85b7eb;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    padding: 1.5rem;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+  .rack { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+  .device { border-radius: 8px; overflow: hidden; font-size: 12px; }
+  .device-header { padding: 7px 12px; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .device-header .sub { font-size: 10px; font-weight: 400; opacity: .65; margin-left: auto; }
+  .device-note { font-size: 10px; padding: 4px 12px 6px; opacity: .7; font-style: italic; }
+  .ports { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; }
+  .port { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; border-radius: 6px; padding: 5px 6px; transition: opacity .12s; min-width: 54px; position: relative; }
+  .port:hover { filter: brightness(1.12); }
+  .port.active { outline: 2.5px solid #fff; outline-offset: 1px; filter: brightness(1.2); }
+  .port.peer { outline: 2.5px solid #EF9F27; outline-offset: 1px; filter: brightness(1.15); }
+  .port.inactive-dim { opacity: .2; }
+  .port-jack { width: 22px; height: 14px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,.35); }
+  .port-num { font-size: 10px; font-weight: 600; opacity: .75; }
+  .port-label { font-size: 10px; text-align: center; max-width: 66px; line-height: 1.25; opacity: .9; }
+  .cable-dot { width: 8px; height: 8px; border-radius: 50%; position: absolute; top: 3px; right: 3px; border: 1px solid rgba(0,0,0,.3); }
+  .info-bar { margin: 0 0 10px; padding: 9px 14px; border-radius: 8px; font-size: 12px; background: var(--surface-1); border: 0.5px solid var(--border); min-height: 36px; display: flex; align-items: center; gap: 8px; color: var(--text-secondary); transition: background .2s; }
+  .info-bar.lit { background: #1a2a3a; border-color: #378ADD; color: #b5d4f4; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .li { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+  .ld { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; }
+  .cable-legend { margin: 0 0 14px; padding: 8px 10px; background: var(--surface-1); border-radius: 8px; border: 0.5px solid var(--border); }
+  .cable-legend-title { font-size: 11px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+  .cable-items { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ci { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+  .cline { width: 28px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+  .power-chain { border: 1.5px dashed #3a7a7a; border-radius: 10px; padding: 10px 12px; margin-top: 6px; background: #0d2020; }
+  .power-header { font-size: 12px; font-weight: 500; color: #9FE1CB; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .power-row { display: flex; align-items: center; gap: 0; flex-wrap: wrap; margin-bottom: 6px; }
+  .power-node { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; color: #e8e8e8; white-space: nowrap; }
+  .power-arrow { font-size: 14px; color: #3a7a7a; padding: 0 4px; flex-shrink: 0; }
+  .pdu-outlets-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .outlet { display: flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; font-size: 11px; font-weight: 500; border: 0.5px solid transparent; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .sep { width: 100%; font-size: 10px; color: #9FE1CB; opacity: .7; margin: 8px 0 4px; display: flex; align-items: center; gap: 6px; }
+  .sep-line { flex: 1; height: 1px; background: #3a7a7a; opacity: .4; }
+  .updated { font-size: 10px; color: var(--text-muted); margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>Home Lab — Network & Power Diagram</h1>
+<p class="subtitle">Click any port to trace its cable · Last updated July 2026</p>
+
+<div class="cable-legend">
+  <div class="cable-legend-title">Cable / link types</div>
+  <div class="cable-items">
+    <div class="ci"><div class="cline" style="background:#e8b44a"></div>Internet WAN (FastFiber)</div>
+    <div class="ci"><div class="cline" style="background:#4a9fe8"></div>LAN uplink (switch-to-switch)</div>
+    <div class="ci"><div class="cline" style="background:#7cba5c"></div>LAN client (end device)</div>
+    <div class="ci"><div class="cline" style="background:#c46060"></div>LAN client (IoT / smart home)</div>
+    <div class="ci"><div class="cline" style="background:#888"></div>Unpatched / spare</div>
+    <div class="ci"><div class="cline" style="background:#3a9a9a"></div>PDU management</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="li"><div class="ld" style="background:#6b3e10"></div>TP-Link TL-SG105</div>
+  <div class="li"><div class="ld" style="background:#1a7a3e"></div>UCG MAX</div>
+  <div class="li"><div class="ld" style="background:#1a4a8a"></div>UDM Pro Max</div>
+  <div class="li"><div class="ld" style="background:#2a2a2a;border:1px solid #555"></div>Patch panel</div>
+  <div class="li"><div class="ld" style="background:#5a3a9a"></div>USW Flex 2.5</div>
+  <div class="li"><div class="ld" style="background:#8a2020"></div>USW Flex Mini</div>
+  <div class="li"><div class="ld" style="background:#1a5a5a"></div>IP PDU (GreenWood)</div>
+  <div class="li"><div class="ld" style="background:#2a4a2a"></div>PDU InfraTronic</div>
+</div>
+
+<div id="info-bar" class="info-bar">Click any port to trace its cable and see connection details</div>
+
+<div class="rack" id="rack"></div>
+
+<div class="power-chain">
+  <div class="power-header">⚡ Power delivery chain</div>
+  <div class="power-row">
+    <div class="power-node" style="background:#1a5a5a">IP PDU (GreenWood)<br><span style="font-size:9px;opacity:.7">main power source</span></div>
+    <div class="power-arrow">→</div>
+    <div class="power-node" style="background:#2a4a2a">PDU InfraTronic<br><span style="font-size:9px;opacity:.7">PowerStrip outlet (ON)</span></div>
+    <div class="power-arrow">→</div>
+    <div class="power-node" style="background:#333">Powers rack devices<br><span style="font-size:9px;opacity:.7">via 8-outlet strip</span></div>
+  </div>
+  <div style="font-size:10px;color:#9FE1CB;opacity:.75;margin-bottom:8px">IP PDU socket status (GreenWood web UI)</div>
+  <div class="pdu-outlets-grid" id="pdu-outlets"></div>
+</div>
+
+<p class="updated">Generated by Claude · claude.ai</p>
+
+<script>
+const C = {
+  patch:   {bg:'#2a2a2a', text:'#e0e0e0', jack:'#444', border:'#555'},
+  tplink:  {bg:'#6b3e10', text:'#faeeda', jack:'#4a2a08', border:'#8a5a20'},
+  ucgmax:  {bg:'#1a7a3e', text:'#d4f5e2', jack:'#0f5a2c', border:'#2a9a5a'},
+  udmpro:  {bg:'#1a4a8a', text:'#b5d4f4', jack:'#0a2a6a', border:'#2a6aaa'},
+  flex25:  {bg:'#5a3a9a', text:'#eeedfe', jack:'#3a1a7a', border:'#7a5aba'},
+  flexmini:{bg:'#8a2020', text:'#fce8e8', jack:'#5a0a0a', border:'#aa4040'},
+  ippdu:   {bg:'#1a5a5a', text:'#e1f5ee', jack:'#0a3a3a', border:'#2a7a7a'},
+};
+
+const CABLE = {
+  wan:'#e8b44a', uplink:'#4a9fe8', client:'#7cba5c', iot:'#c46060', pdu:'#3a9a9a', none:'#666'
+};
+
+const connections = [
+  {id:'tp-01', device:'tplink', port:1, label:'FastFiber ONT', peer:null, cable:'wan', isONT:true, desc:'TP-Link port 01 ← FastFiber 500/100 Mbps ONT — WAN input'},
+  {id:'tp-02', device:'tplink', port:2, label:'→ UCG MAX', peer:'ucg-05', cable:'wan', desc:'TP-Link port 02 → UCG MAX port 05 (via patch 24) — WAN cable'},
+  {id:'tp-03', device:'tplink', port:3, label:'→ UDM Pro Max', peer:'udm-09', cable:'wan', desc:'TP-Link port 03 → UDM Pro Max port 09 (via patch 23) — WAN 2.5G · active only when UCG MAX offline'},
+  {id:'tp-04', device:'tplink', port:4, label:'(spare)', peer:null, cable:'none', unpatched:true, desc:'TP-Link port 04 — spare'},
+  {id:'tp-05', device:'tplink', port:5, label:'(spare)', peer:null, cable:'none', unpatched:true, desc:'TP-Link port 05 — spare'},
+  {id:'ucg-01', device:'ucgmax', port:1, label:'Proxmox', peer:'pp-19', cable:'client', desc:'UCG MAX port 01 → patch 19 → Proxmox — LAN client cable'},
+  {id:'ucg-02', device:'ucgmax', port:2, label:'NuC', peer:'pp-20', cable:'client', desc:'UCG MAX port 02 → patch 20 → NuC — LAN client cable'},
+  {id:'ucg-03', device:'ucgmax', port:3, label:'Living TLC TV', peer:'pp-21', cable:'client', desc:'UCG MAX port 03 → patch 21 → Living TLC TV — LAN client cable'},
+  {id:'ucg-04', device:'ucgmax', port:4, label:'→ Flex 2.5', peer:'flex-05', cable:'uplink', desc:'UCG MAX port 04 downlink → USW Flex 2.5 port 05 uplink (via patch 22) — LAN uplink cable'},
+  {id:'ucg-05', device:'ucgmax', port:5, label:'Internet in', peer:'tp-02', cable:'wan', desc:'UCG MAX port 05 ← TP-Link port 02 (via patch 24) — WAN internet cable'},
+  {id:'udm-09', device:'udmpro', port:9, label:'2.5G internet', peer:'tp-03', cable:'wan', desc:'UDM Pro Max port 09 ← TP-Link port 03 (via patch 23) — WAN 2.5G · standby'},
+  {id:'pp-24', device:'patch', port:24, label:'TP-Link 01 up', peer:'ucg-05', cable:'wan', desc:'Patch 24 ↔ TP-Link port 02 / UCG MAX port 05 — WAN internet cable'},
+  {id:'pp-23', device:'patch', port:23, label:'TP-Link 02 up', peer:'udm-09', cable:'wan', desc:'Patch 23 ↔ TP-Link port 03 / UDM Pro Max port 09 — WAN 2.5G cable'},
+  {id:'pp-22', device:'patch', port:22, label:'Flex 2.5 05up', peer:'flex-05', cable:'uplink', desc:'Patch 22 ↔ USW Flex 2.5 port 05 / UCG MAX port 04 — LAN uplink cable'},
+  {id:'pp-21', device:'patch', port:21, label:'UCG MAX 03', peer:'ucg-03', cable:'client', desc:'Patch 21 ↔ UCG MAX port 03 / Living TLC TV — LAN client cable'},
+  {id:'pp-20', device:'patch', port:20, label:'UCG MAX 02', peer:'ucg-02', cable:'client', desc:'Patch 20 ↔ UCG MAX port 02 / NuC — LAN client cable'},
+  {id:'pp-19', device:'patch', port:19, label:'UCG MAX 01', peer:'ucg-01', cable:'client', desc:'Patch 19 ↔ UCG MAX port 01 / Proxmox — LAN client cable'},
+  {id:'pp-18', device:'patch', port:18, label:'Flex 2.5 04', peer:'flex-04', cable:'client', desc:'Patch 18 ↔ USW Flex 2.5 port 04 / TP Link PLC WiFi 08&09 — LAN client cable'},
+  {id:'pp-17', device:'patch', port:17, label:'Flex 2.5 03', peer:'flex-03', cable:'client', desc:'Patch 17 ↔ USW Flex 2.5 port 03 / Raspberry Pi 5 — LAN client cable'},
+  {id:'pp-16', device:'patch', port:16, label:'Flex 2.5 02', peer:'flex-02', cable:'client', desc:'Patch 16 ↔ USW Flex 2.5 port 02 / NAS 1221 — LAN client cable'},
+  {id:'pp-15', device:'patch', port:15, label:'Flex Mini 04', peer:'fmini-04', cable:'pdu', desc:'Patch 15 ↔ Flex Mini port 04 / IP PDU — PDU management cable'},
+  {id:'pp-14', device:'patch', port:14, label:'Flex Mini 03', peer:'fmini-03', cable:'iot', desc:'Patch 14 ↔ Flex Mini port 03 / SmartThings — IoT cable'},
+  {id:'pp-13', device:'patch', port:13, label:'Flex Mini 02', peer:'fmini-02', cable:'iot', desc:'Patch 13 ↔ Flex Mini port 02 / Tado — IoT cable'},
+  {id:'pp-12', device:'patch', port:12, label:'Flex Mini 01', peer:'fmini-01', cable:'iot', desc:'Patch 12 ↔ Flex Mini port 01 / Gigaset — IoT cable'},
+  {id:'pp-11', device:'patch', port:11, label:'EPSON', peer:null, cable:'none', unpatched:true, desc:'Patch 11 — EPSON (to be connected)'},
+  {id:'flex-01', device:'flex25', port:1, label:'→ Flex Mini', peer:'fmini-05', cable:'uplink', desc:'USW Flex 2.5 port 01 downlink → Flex Mini port 05 uplink — LAN uplink cable'},
+  {id:'flex-02', device:'flex25', port:2, label:'NAS 1221', peer:'pp-16', cable:'client', desc:'USW Flex 2.5 port 02 → NAS 1221 (via patch 16) — LAN client cable'},
+  {id:'flex-03', device:'flex25', port:3, label:'Raspberry Pi 5', peer:'pp-17', cable:'client', desc:'USW Flex 2.5 port 03 → Raspberry Pi 5 (via patch 17) — LAN client cable'},
+  {id:'flex-04', device:'flex25', port:4, label:'PLC WiFi 08&09', peer:'pp-18', cable:'client', desc:'USW Flex 2.5 port 04 → TP Link PLC WiFi 08&09 (via patch 18) — LAN client cable'},
+  {id:'flex-05', device:'flex25', port:5, label:'UCG MAX 04up', peer:'ucg-04', cable:'uplink', desc:'USW Flex 2.5 port 05 uplink → UCG MAX port 04 (via patch 22) — LAN uplink cable'},
+  {id:'fmini-01', device:'flexmini', port:1, label:'Gigaset', peer:'pp-12', cable:'iot', desc:'Flex Mini port 01 → Gigaset (via patch 12) — IoT cable'},
+  {id:'fmini-02', device:'flexmini', port:2, label:'Tado', peer:'pp-13', cable:'iot', desc:'Flex Mini port 02 → Tado (via patch 13) — IoT cable'},
+  {id:'fmini-03', device:'flexmini', port:3, label:'SmartThings', peer:'pp-14', cable:'iot', desc:'Flex Mini port 03 → SmartThings (via patch 14) — IoT cable'},
+  {id:'fmini-04', device:'flexmini', port:4, label:'IP PDU', peer:'pp-15', cable:'pdu', desc:'Flex Mini port 04 → IP PDU (via patch 15) — PDU management cable'},
+  {id:'fmini-05', device:'flexmini', port:5, label:'← Flex 2.5 01', peer:'flex-01', cable:'uplink', desc:'Flex Mini port 05 uplink ← USW Flex 2.5 port 01 downlink — LAN uplink cable'},
+];
+
+const pduOutlets = [
+  {name:'RS1221', on:false, note:'NAS'},
+  {name:'UdmProMax', on:false, note:'UDM Pro Max'},
+  {name:'USE24PoE', on:false, note:'USE-24-PoE'},
+  {name:'SmartThings', on:true, note:''},
+  {name:'PowerStrip', on:true, note:'= PDU InfraTronic'},
+  {name:'UCG_Max', on:true, note:''},
+  {name:'InkBird', on:true, note:''},
+  {name:'Nuc', on:true, note:''},
+];
+
+const infratronic = [
+  {name:'USW Pro MAX', note:'pos 1'},
+  {name:'Aeotec alarm', note:'pos 2'},
+  {name:'Proxmox', note:'pos 3'},
+];
+
+const devices = [
+  {id:'tplink', name:'TP-Link TL-SG105', subtitle:'ONT internet splitter · FastFiber 500/100Mbps', colorKey:'tplink',
+    note:'⚡ Splits FastFiber between UCG MAX and UDM Pro Max — only one active at a time',
+    ports: connections.filter(c=>c.device==='tplink')},
+  {id:'ucgmax', name:'UCG MAX', subtitle:'primary router / gateway', colorKey:'ucgmax',
+    ports: connections.filter(c=>c.device==='ucgmax').sort((a,b)=>a.port-b.port)},
+  {id:'udmpro', name:'UDM Pro Max', subtitle:'secondary router (2.5G standby)', colorKey:'udmpro',
+    ports: connections.filter(c=>c.device==='udmpro')},
+  {id:'patch', name:'Patch panel', subtitle:'black cables · ports 11–24', colorKey:'patch',
+    ports: connections.filter(c=>c.device==='patch').sort((a,b)=>b.port-a.port)},
+  {id:'flex25', name:'USW Flex 2.5', subtitle:'5-port managed switch', colorKey:'flex25',
+    ports: connections.filter(c=>c.device==='flex25').sort((a,b)=>a.port-b.port)},
+  {id:'flexmini', name:'USW Flex Mini', subtitle:'5-port managed switch', colorKey:'flexmini',
+    ports: connections.filter(c=>c.device==='flexmini').sort((a,b)=>a.port-b.port)},
+];
+
+const connMap = {};
+connections.forEach(c => connMap[c.id] = c);
+let selected = null;
+
+function buildPDU() {
+  const el = document.getElementById('pdu-outlets');
+  el.innerHTML = '';
+  pduOutlets.forEach(o => {
+    const isStrip = o.name === 'PowerStrip';
+    const bg = o.on ? (isStrip ? '#2a4a2a' : '#1a5a1a') : '#1a1a1a';
+    const col = o.on ? (isStrip ? '#9FE1CB' : '#d4f5d4') : '#666';
+    const bc = o.on ? (isStrip ? '#3a7a3a' : '#2a7a2a') : '#333';
+    const div = document.createElement('div');
+    div.className = 'outlet';
+    div.style.cssText = `background:${bg};color:${col};border-color:${bc}`;
+    div.innerHTML = `<span class="status-dot" style="background:${o.on?'#6fff9e':'#444'}"></span>${o.name}${o.note?` <span style="opacity:.6;font-size:9px">(${o.note})</span>`:''}`;
+    el.appendChild(div);
+  });
+  const sep = document.createElement('div');
+  sep.className = 'sep';
+  sep.innerHTML = '<span class="sep-line"></span>PDU InfraTronic downstream (via PowerStrip)<span class="sep-line"></span>';
+  el.appendChild(sep);
+  infratronic.forEach(o => {
+    const div = document.createElement('div');
+    div.className = 'outlet';
+    div.style.cssText = 'background:#1a3a1a;color:#a0e0a0;border-color:#2a5a2a';
+    div.innerHTML = `<span class="status-dot" style="background:#6fff9e"></span>${o.name} <span style="opacity:.6;font-size:9px">(${o.note})</span>`;
+    el.appendChild(div);
+  });
+}
+
+function render() {
+  const rack = document.getElementById('rack');
+  rack.innerHTML = '';
+  devices.forEach(dev => {
+    const c = C[dev.colorKey];
+    const devEl = document.createElement('div');
+    devEl.className = 'device';
+    devEl.style.cssText = `background:${c.bg};border:1.5px solid ${c.border}`;
+    devEl.innerHTML = `<div class="device-header" style="background:rgba(0,0,0,.25);color:${c.text}">
+      <span>${dev.name}</span><span class="sub">${dev.subtitle}</span>
+    </div>${dev.note?`<div class="device-note" style="color:${c.text}">${dev.note}</div>`:''}<div class="ports" id="ports-${dev.id}"></div>`;
+    rack.appendChild(devEl);
+    const portsEl = devEl.querySelector(`#ports-${dev.id}`);
+    dev.ports.forEach(p => {
+      const isUnpatched = !!p.unpatched;
+      const cableColor = CABLE[p.cable] || CABLE.none;
+      const el = document.createElement('div');
+      el.className = 'port' + (isUnpatched ? ' unpatched' : '');
+      el.dataset.id = p.id;
+      el.style.cssText = `background:rgba(0,0,0,.25);color:${c.text}`;
+      el.innerHTML = `
+        <div class="port-jack" style="background:${isUnpatched?'#333':c.jack};border-color:${isUnpatched?'#555':c.border}"></div>
+        <div class="port-num" style="color:${c.text}">${p.port}</div>
+        <div class="port-label" style="color:${c.text}">${p.label}</div>
+        ${!isUnpatched && p.peer ? `<div class="cable-dot" style="background:${cableColor}"></div>` : ''}
+        ${p.isONT ? `<div style="font-size:9px;background:${CABLE.wan}33;color:${CABLE.wan};padding:1px 5px;border-radius:10px;margin-top:2px;border:1px solid ${CABLE.wan}66">WAN in</div>` : ''}
+      `;
+      el.onclick = () => selectPort(p.id);
+      portsEl.appendChild(el);
+    });
+  });
+  updateHighlight();
+  buildPDU();
+}
+
+function selectPort(id) {
+  selected = (selected === id) ? null : id;
+  updateHighlight();
+}
+
+function updateHighlight() {
+  const allPorts = document.querySelectorAll('.port');
+  const info = document.getElementById('info-bar');
+  if (!selected) {
+    allPorts.forEach(p => p.classList.remove('active','peer','inactive-dim'));
+    info.className = 'info-bar';
+    info.style.borderColor = '';
+    info.innerHTML = 'Click any port to trace its cable and see connection details';
+    return;
+  }
+  const conn = connMap[selected];
+  const peerId = conn?.peer;
+  const cableColor = CABLE[conn?.cable] || CABLE.none;
+  allPorts.forEach(p => {
+    const pid = p.dataset.id;
+    p.classList.remove('active','peer','inactive-dim');
+    if (pid === selected) p.classList.add('active');
+    else if (pid === peerId) p.classList.add('peer');
+    else p.classList.add('inactive-dim');
+  });
+  info.className = 'info-bar lit';
+  info.style.borderColor = cableColor;
+  info.innerHTML = `<span style="display:inline-block;width:28px;height:4px;border-radius:2px;background:${cableColor};flex-shrink:0"></span> ${conn.desc}`;
+}
+
+render();
+</script>
+</body>
+</html>
+
